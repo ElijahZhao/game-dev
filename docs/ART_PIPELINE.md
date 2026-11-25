@@ -84,19 +84,22 @@ python3 tools/crop_hub.py
 
 ## G3-3 产出（2026-11-25）
 
-世界 Boss 第三只，沙海蜃。玩家基线仍是 32px 可见高度；这不是沙门 / 神龛，也不是苔背巨兽换色，而是贴地游走的沙海活体。
+世界 Boss 第三只，沙海蜃；同批补沙海战场小怪与沙岩堆，`desert-6` 不再清场。玩家基线仍是 32px 可见高度；这不是沙门 / 神龛，也不是苔背巨兽换色，而是贴地游走的沙海活体。
 
 | 件 | 源 | 源尺寸 | 正式输出 | 运行时 |
 |---|---|---|---|---|
 | 沙海蜃 待机 | `art-src/g3/sand-mirage.cjs`（seed 303，`pose=idle`） | 384×96，4 向 | `sand-mirage-idle.png` 384×96 | 世界 Boss；2.48× 玩家，79.2px |
 | 沙海蜃 蓄力 | 同上，`pose=charge` | 384×96，4 向 | `sand-mirage-charge.png` 384×96 | 蓄力 / 扑击 / 横扫；2.25× 玩家，72.0px |
 | 沙海蜃 咆哮 | 同上，`pose=roar` | 384×96，4 向 | `sand-mirage-roar.png` 384×96 | 入场 / 落地 / 死亡；2.85× 玩家，91.2px |
+| 沙蚋 待机 / 疾走 | `art-src/g3/sand-scarab.cjs`（seed 304） | 256×64，4 向 × 2 姿态 | `sand-scarab-idle.png` / `sand-scarab-skitter.png` 256×64 | Boss 场小怪；0.93× / 0.89× 玩家 |
+| 沙岩堆 | `art-src/g3/sand-rock.cjs`（seed 305） | 64×64，1 向 | `sand-rock.png` 64×64 | Boss 场石景；2.07–2.19× 玩家 |
 
 - 造型：宽薄沙帆翼（后掠、前后向骨架）、低宽主躯干、三块覆瓦沙甲、新月背帆（半张 / 后掠 / 张开三态）、宽楔头 + 深眼窝 + 青焰瞳 + 金色高光、颊甲 / 沙玻璃短角 / 两颗小獠牙、四只短桨足 + 三枚沙玻璃爪、三节沙壳长鞭尾 + 玻璃倒刺 + 金色尾晶。
 - 帧序：0 前 / 1 左 / 2 后 / 3 右；三姿态脚底统一 **65/96**，`originY=0.6771`；运行时 `scale=2.4`，静态姿态切帧 + 呼吸 tween；`mirror` 为同姿态 ADD 重影，不参与碰撞。
 - 取景：`cam target [0,1.04,0], dist 10.2, pitch 0.13, yaw 0.04`；`charge` 的 `finTop 1.66`，把蓄力可见高度从 25px 提到 30px，保证 2.2× 下限。
-- 对照板：`docs/revamp/g3-3d/sand-mirage-board.png`；源元数据：`docs/revamp/g3-3d/sand-mirage-{idle,charge,roar}.json`。
-- 审计：`python3 tools/audit_scale.py` 扩第三只 Boss → **144 实例 / 0 FAIL**，沙海蜃 idle 2.48× / charge 2.25× / roar 2.85×。
+- 对照板：`docs/revamp/g3-3d/sand-mirage-board.png`、`docs/revamp/g3-3d/sand-battle-board.png`；源元数据：`docs/revamp/g3-3d/sand-mirage-{idle,charge,roar}.json`、`sand-scarab-{idle,skitter}.json`、`sand-rock.json`。
+- 审计：`python3 tools/audit_scale.py` 扩第三只 Boss + 沙蚋 + 沙岩堆 + battle 沙蓬 → **161 实例 / 0 FAIL**，沙海蜃 idle 2.48× / charge 2.25× / roar 2.85×；沙蚋 idle 0.93× / skitter 0.89×；沙岩堆 2.07–2.19×。
+- 战场运行时：battle 沙蓬 3 节点复用 `desertShrub` + 绿色光晕，采后 45s 重生；沙蚋 9s 增援、首杀必掉心火；Boss 战右邻雪原暂隐 30 对象并补 7 项沙海延伸，胜利关闭后恢复；沙海蜃 `bodyTint=0xa68f73`。
 - 复现：`node art-src/g3/render-g3.cjs`（需要 `INK_STUDIO` 指向固定 checkout）。
 - 素材出处：ink-studio 生成件，工具 MIT，成品本项目自制；不涉及 Ninja Adventure 原 Boss 图。
 
