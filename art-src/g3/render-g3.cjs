@@ -22,6 +22,9 @@ const specs = [
   { file: 'sand-mirage.cjs', pose: 'idle', out: 'sand-mirage-idle', w: 96, h: 96, directions: 4, dist: 10.2 },
   { file: 'sand-mirage.cjs', pose: 'charge', out: 'sand-mirage-charge', w: 96, h: 96, directions: 4, dist: 10.2 },
   { file: 'sand-mirage.cjs', pose: 'roar', out: 'sand-mirage-roar', w: 96, h: 96, directions: 4, dist: 10.2 },
+  { file: 'sand-scarab.cjs', pose: 'idle', out: 'sand-scarab-idle', w: 64, h: 64, directions: 4, dist: 4.6 },
+  { file: 'sand-scarab.cjs', pose: 'skitter', out: 'sand-scarab-skitter', w: 64, h: 64, directions: 4, dist: 4.6 },
+  { file: 'sand-rock.cjs', pose: 'idle', out: 'sand-rock', w: 64, h: 64, directions: 1, dist: 5.2 },
 ];
 
 for (const spec of specs) {

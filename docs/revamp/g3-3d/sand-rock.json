@@ -1,0 +1,44 @@
+{
+  "width": 64,
+  "height": 64,
+  "tileWidth": 64,
+  "tileHeight": 64,
+  "directions": 1,
+  "fps": 12,
+  "pivot": [
+    0,
+    0.64,
+    0
+  ],
+  "frames": [
+    {
+      "frame": 0,
+      "direction": 0,
+      "yaw": 0.05,
+      "pitch": 0.16,
+      "unitsPerPixel": 0.055953237159570596,
+      "depthOrigin": 15.2,
+      "time": 0,
+      "duration": 0.08333333333333333,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    }
+  ],
+  "normalSpace": "asset",
+  "emissionMode": "baked",
+  "encodings": {
+    "color": "straight RGBA"
+  },
+  "sourceScene": "sand-rock.cjs",
+  "pose": "idle",
+  "renderer": "ink-studio CPU spriteAtlas",
+  "note": "RGBA color atlas; frames left-to-right, one row, directions 0..3"
+}

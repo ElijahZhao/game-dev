@@ -19,6 +19,7 @@ PLAYER_H = 32
 BASE = {
     'tree': 1.8, 'bush': 0.9, 'bamboo': 1.1, 'bambooGate': 1.0,
     'desertArch': 1.0, 'desertDeadTree': 1.35, 'desertPalm': 1.5,
+    'desertRock': 2.5, 'desertScrub': 1.3, 'desertDune': 1.0,
     'campfire': 1.3, 'snowPine': 1.0, 'snowShrine': 1.1,
     'volcanoSpire': 1.2, 'volcanoVent': 2.0, 'volcanoForge': 1.0,
     'volcanoLava': 3.0,
@@ -65,6 +66,17 @@ BOSS_ART = {
         },
     },
 }
+
+MINION_ART = {
+    'sandScarab': {
+        'name': '沙蚋', 'scale': 1.35, 'fw': 64, 'fh': 64,
+        'poses': {
+            'idle': 'assets/01-primary/world/sand-scarab-idle.png',
+            'skitter': 'assets/01-primary/world/sand-scarab-skitter.png',
+        },
+    },
+}
+
 ASSET = {
     'tree': 'assets/01-primary/world/tree-green.png',
     'bush': 'assets/01-primary/world/bush-green.png',
@@ -73,6 +85,8 @@ ASSET = {
     'desertArch': 'assets/01-primary/world/desert-arch.png',
     'desertDeadTree': 'assets/01-primary/world/desert-dead-tree.png',
     'desertPalm': 'assets/01-primary/world/desert-palm.png',
+    'desertRock': 'assets/01-primary/world/sand-rock.png',
+    'desertScrub': 'assets/01-primary/world/desert-shrub.png',
     'campfire': 'assets/01-primary/external/campfire-16x16.png',
     'snowPine': 'assets/01-primary/world/snow-pine.png',
     'snowShrine': 'assets/01-primary/world/snow-shrine.png',
@@ -107,7 +121,9 @@ def main():
             h = h0 * pscale
             ratio = h / PLAYER_H
             low = 2.2 if kind in ('tree', 'bamboo', 'bambooGate', 'desertArch', 'desertDeadTree', 'desertPalm', 'snowPine', 'volcanoSpire') else (2.8 if kind in ('snowShrine', 'volcanoForge') else 0)
-            high = 1.3 if kind in ('campfire', 'volcanoLava', 'volcanoVent') else 0
+            high = 1.15 if kind in ('desertScrub',) else (1.3 if kind in ('campfire', 'volcanoLava', 'volcanoVent') else 0)
+            if kind == 'desertRock' and ratio < 2.0:
+                fails.append(f'{s["id"]} desertRock {ratio:.2f}x < 2.0x')
             if kind == 'campfire' and ratio < 0.7:
                 fails.append(f'{s["id"]} campfire {ratio:.2f}x < 0.7x')
             if low and ratio < low:
@@ -149,6 +165,23 @@ def main():
             if not 2.2 <= ratio <= 3.3:
                 fails.append(f'{b["screen"]} {cfg["name"]} {pose} {ratio:.2f}x outside 2.2–3.3 (h={h:.1f}, w={max(widths)})')
             rows.append((b['screen'], 'boss:' + cfg['name'] + ':' + pose, round(h, 1), round(ratio, 2)))
+    for b in data.get('bosses', []):
+        for m in b.get('minions', []):
+            cfg = MINION_ART.get(m.get('kind'))
+            if not cfg:
+                continue
+            for pose, path in cfg['poses'].items():
+                im = Image.open(ROOT / path).convert('RGBA')
+                heights = []
+                for i in range(4):
+                    box = im.crop((i * cfg['fw'], 0, (i + 1) * cfg['fw'], cfg['fh'])).getbbox()
+                    if box:
+                        heights.append(box[3] - box[1])
+                h = max(heights) * cfg['scale']
+                ratio = h / PLAYER_H
+                if not 0.65 <= ratio <= 1.15:
+                    fails.append(f'{b["screen"]} {cfg["name"]} {pose} {ratio:.2f}x outside 0.65–1.15')
+                rows.append((b['screen'], 'minion:' + cfg['name'] + ':' + pose, round(h, 1), round(ratio, 2)))
     print('screen | kind | visible_px | ratio_to_player')
     for row in rows:
         print(' | '.join(map(str, row)))

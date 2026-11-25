@@ -25,6 +25,8 @@ const SPEED = 78;
 const PLAYER_MAX_HP = 20;
 const GATHER_MS = 2000;
 const RESPAWN_MS = 90000;
+const BATTLE_HERB_RESPAWN_MS = 45000;
+const MOB_HEAL = 3;
 const ATTACK_CD = 320;
 const ATTACK_RANGE = 62;
 const ATTACK_DMG = 3;
@@ -57,9 +59,18 @@ const BOSS_ART = {
     pounceGap: 92, pounceR: 100, swipeR: 112, swipeWarn: 104,
     shadow: [142, 18], glowY: 28, labelY: 100,
     tint: UI.world.desert, mirage: true,
+    // 原 3D 件在沙底上偏亮，战斗里压一档暖褐，保住蜃的沙色又不至于和地面融成一片。
+    bodyTint: 0xa68f73,
   },
 };
 const bossArt = (id) => BOSS_ART[id] || BOSS_ART.mossBeast;
+/* G3-3 Boss 场小怪：沙蚋。四向 × idle / skitter，按脚底 44/64 锚定。 */
+const MINION_ART = {
+  sandScarab: {
+    idle: 'sandScarabIdle', skitter: 'sandScarabSkitter',
+    scale: 1.35, origin: 44 / 64, shadow: [30, 8],
+  },
+};
 const WORLD_TOUCH = [
   { id: 'attack', label: '攻', r: 22, fx: 38, fy: 42 },
   { id: 'interact', label: 'E', r: 18, fx: 84, fy: 28 },
@@ -78,6 +89,7 @@ const PLAYER_H = 32;
 const PROP_SCALE = {
   tree: 1.8, bush: 0.9, bamboo: 1.1, bambooGate: 1.0, desertArch: 1.0,
   desertDeadTree: 1.35, desertPalm: 1.5, campfire: 1.3,
+  desertRock: 2.5, desertScrub: 1.3, desertDune: 1.0,
   snowPine: 1.0, snowShrine: 1.1, snowLantern: 1.3,
   volcanoSpire: 1.2, volcanoVent: 2.0, volcanoForge: 1.0,
   volcanoLava: 3.0,
@@ -248,6 +260,15 @@ function normalizeWorld(raw) {
       victoryTitle: String(b.victoryTitle || '星火的碎片 · 已归位'),
       victoryBody: String(b.victoryBody || '这片群系的远征，暂时告一段落。'),
       memorialText: String(b.memorialText || '星火已归位'),
+      minionRespawnMs: Math.max(2000, Math.round(asNumber(b.minionRespawnMs, 9000))),
+      minionDropChance: Math.min(1, Math.max(0, asNumber(b.minionDropChance, 0.35))),
+      minions: (Array.isArray(b.minions) ? b.minions : []).filter((m) => m && m.kind).map((m) => ({
+        kind: String(m.kind),
+        x: asNumber(m.x, 0),
+        y: asNumber(m.y, 0),
+        hp: Math.max(1, Math.round(asNumber(m.hp, 6))),
+        dmg: Math.max(1, Math.round(asNumber(m.dmg, 2))),
+      })),
     });
   }
   return {
@@ -330,6 +351,13 @@ export class World extends Phaser.Scene {
     this.bossDead = false;
     this.bossSpawn = null;
     this.arenaLine = null;
+    this.bossHidden = [];
+    this.bossEdge = [];
+    this.mobs = [];
+    this.loot = [];
+    this.minionMax = 0;
+    this.minionRespawnAt = 0;
+    this.mobKills = 0;
     this.attackBtn = null;
     this.attackT = null;
     this.pointerTarget = null;
@@ -588,6 +616,29 @@ export class World extends Phaser.Scene {
       this.add.image(x, y, 'desertPalm')
         .setOrigin(0.5, 1).setScale(k).setDepth(18);
       this.addBlock(s, p.x - 7, p.y - 9, 14, 9);
+    } else if (p.kind === 'desertRock') {
+      this.add.ellipse(x, y - 2, 40 * k, 10 * k, 0x000000, 0.22).setDepth(17);
+      this.add.image(x, y, 'desertRock')
+        .setOrigin(0.5, 45 / 64).setScale(k).setDepth(18);
+      // 只挡柱脚，不挡顶部；玩家仍可贴近石柱绕打。
+      this.addBlock(s, p.x - 18 * k, p.y - 14, 36 * k, 14);
+    } else if (p.kind === 'desertScrub') {
+      this.add.ellipse(x, y - 2, 22 * k, 6 * k, 0x000000, 0.18).setDepth(17);
+      this.add.image(x, y, 'desertShrub')
+        .setOrigin(0.5, 1).setScale(k).setDepth(18).setTint(0xe4d2a2);
+    } else if (p.kind === 'desertDune') {
+      // 低矮沙脊：只做地形层，不挡走位，也不盖住 Boss 的脚底 / 预警圈。
+      const w = 78 * k;
+      const h = 22 * k;
+      this.add.ellipse(x, y - h * 0.34, w, h, 0xc9ad74, 0.12)
+        .setDepth(2.45).setBlendMode(Phaser.BlendModes.ADD);
+      this.add.ellipse(x - w * 0.16, y - h * 0.58, w * 0.54, h * 0.54, 0xd8bd88, 0.08)
+        .setDepth(2.5);
+      this.add.ellipse(x, y - 2, w * 1.04, 7, 0x000000, 0.06).setDepth(2.4);
+      for (let i = 0; i < 3; i += 1) {
+        this.add.rectangle(x - w * 0.28 + i * w * 0.28, y - h * 0.62, w * 0.22, 1, 0x9b7b42, 0.08)
+          .setDepth(2.55).setRotation(i % 2 ? 0.08 : -0.06);
+      }
     } else if (p.kind === 'snowPine') {
       this.add.ellipse(x, y - 3, 36 * k, 9 * k, 0x000000, 0.22).setDepth(17);
       this.add.image(x, y, 'snowPine')
@@ -690,27 +741,31 @@ export class World extends Phaser.Scene {
         const desert = s.biome === 'desert';
         const snow = s.biome === 'snow';
         const volcano = s.biome === 'volcano';
-        const glow = this.add.circle(x, y - 6, snow ? 12 : (desert ? 15 : 12), prof.glowTint, snow ? 0.10 : (desert ? 0.08 : 0.10))
+        const battle = !!h[2];
+        const glow = this.add.circle(x, y - 6, snow ? 12 : (desert ? 15 : 12), battle ? UI.world.herb : prof.glowTint, snow ? 0.10 : (desert ? (battle ? 0.16 : 0.08) : 0.10))
           .setDepth(23).setBlendMode(Phaser.BlendModes.ADD);
         const herbAsset = desert ? 'desertShrub' : (snow ? 'snowLantern' : (volcano ? 'volcanoEmber' : 'herb'));
         const herbScale = desert ? 1.7 : (snow ? 1.3 : (volcano ? 1.3 : 1.0));
         const sprite = this.add.sprite(x, y, herbAsset, 0)
           .setOrigin(0.5, 1).setScale(herbScale).setDepth(24);
         this.tweens.add({ targets: sprite, y: y - 3, duration: 760 + i * 90, yoyo: true, repeat: -1 });
-        const prompt = this.add.text(x, y - (desert || snow || volcano ? 32 : 24), 'E 采集', {
+        const prompt = this.add.text(x, y - (desert || snow || volcano ? 32 : 24), battle ? 'E 采沙蓬' : 'E 采集', {
           fontFamily: UI.font, fontSize: '12px', color: UI.text.heading,
           backgroundColor: UI.hud.bg, padding: { x: 5, y: 2 },
         }).setOrigin(0.5, 1).setDepth(46).setVisible(false);
         sprite.setInteractive({ useHandCursor: true });
         const node = {
           id: s.id + '-' + i, screen: s.id, screenIndex: this.screens.indexOf(s), biome: s.biome,
-          x, y, sprite, glow, prompt, active: true, respawnAt: 0,
+          x, y, sprite, glow, prompt, active: true, respawnAt: 0, battle, heal: battle ? 2 : 0,
         };
         sprite.on('pointerdown', () => {
-          if (this.talking || this.panelOpen || this.gathering || this.bossActive) return;
+          if (this.talking || this.panelOpen || this.gathering) return;
           if (!node.active) return;
-          if (this.distPlayer(x, y) <= 48) this.startGather(node);
-          else this.pointerTarget = { x, y };
+          if (this.bossActive && !node.battle) return;
+          if (this.distPlayer(x, y) <= 48) {
+            if (node.battle) this.pickBattleHerb(node);
+            else this.startGather(node);
+          } else this.pointerTarget = { x, y };
         });
         this.herbs.push(node);
       });
@@ -1349,7 +1404,12 @@ export class World extends Phaser.Scene {
     if (this.dead) { this.retryBoss(); return; }
     if (this.talking) { this.advanceTalk(); return; }
     if (this.panelOpen || this.gathering) return;
-    if (this.bossActive) { this.attack(); return; }
+    if (this.bossActive) {
+      const battle = this.nearestHerb(true);
+      if (battle && this.distPlayer(battle.x, battle.y) <= 46) { this.pickBattleHerb(battle); return; }
+      this.attack();
+      return;
+    }
     const quench = this.nearestQuench();
     if (quench && this.distPlayer(quench.x, quench.y) <= 48) {
       this.quenchAt(quench);
@@ -1362,7 +1422,8 @@ export class World extends Phaser.Scene {
     }
     const herb = this.nearestHerb();
     if (herb && this.distPlayer(herb.x, herb.y) <= 46) {
-      this.startGather(herb);
+      if (herb.battle) this.pickBattleHerb(herb);
+      else this.startGather(herb);
       return;
     }
     if (camp && this.distPlayer(camp.x, camp.y) <= 48) {
@@ -1422,6 +1483,8 @@ export class World extends Phaser.Scene {
     this.updatePrompts();
     this.updateRespawns(time);
     this.updateBoss(time, delta);
+    this.updateMobs(time, delta);
+    this.updateLoot();
     const next = clamp(Math.floor((this.player.x + 2) / SCREEN_W), 0, this.screens.length - 1);
     if (next !== this.screenIndex) this.applyScreen(next);
   }
@@ -1445,8 +1508,8 @@ export class World extends Phaser.Scene {
     let ny = this.player.y + (vy / d) * step;
     nx = clamp(nx, 8, this.worldWidth - 8);
     ny = clamp(ny, WORLD_Y + 14, WORLD_Y + SCREEN_H - 10);
-    if (this.bossActive && this.bossSpawn && this.screenIndex === this.bossSpawn.screenIndex) {
-      nx = Math.max(nx, this.bossSpawn.screen.x + 24);
+    if (this.bossActive && this.bossSpawn) {
+      nx = clamp(nx, this.bossSpawn.screen.x + 24, this.bossSpawn.screen.x + SCREEN_W - 24);
     }
     if (!this.isBlocked(nx, this.player.y)) this.player.x = nx;
     if (!this.isBlocked(this.player.x, ny)) this.player.y = ny;
@@ -1493,11 +1556,11 @@ export class World extends Phaser.Scene {
     return Phaser.Math.Distance.Between(this.player.x, this.player.y - 14, x, y - 8);
   }
 
-  nearestHerb() {
+  nearestHerb(battleOnly = false) {
     let best = null;
     let bestD = 999;
     this.herbs.forEach((n) => {
-      if (!n.active) return;
+      if (!n.active || (battleOnly && !n.battle)) return;
       const d = this.distPlayer(n.x, n.y);
       if (d < bestD) { bestD = d; best = n; }
     });
@@ -1505,12 +1568,18 @@ export class World extends Phaser.Scene {
   }
 
   updatePrompts() {
-    const busy = this.talking || this.panelOpen || !!this.gathering || this.dead || this.victory || this.bossActive;
+    const busy = this.talking || this.panelOpen || !!this.gathering || this.dead || this.victory;
     this.herbs.forEach((n) => n.prompt.setVisible(false));
     this.npcs.forEach((n) => n.prompt.setVisible(false));
     this.quenches.forEach((q) => q.prompt.setVisible(false));
     this.campfires.forEach((c) => c.prompt.setVisible(false));
     if (busy) return;
+    // Boss 战里保留一处“沙蓬”风险采集：E 快采回血，不冻结 Boss。
+    if (this.bossActive) {
+      const battle = this.nearestHerb(true);
+      if (battle && this.distPlayer(battle.x, battle.y) <= 48) battle.prompt.setVisible(true);
+      return;
+    }
     const quench = this.nearestQuench();
     if (quench && this.save.volcanoQuest2 === 'active' && this.distPlayer(quench.x, quench.y) <= 48) {
       quench.prompt.setVisible(true);
@@ -1537,14 +1606,16 @@ export class World extends Phaser.Scene {
         n.respawnAt = 0;
         n.sprite.setVisible(true);
         n.glow.setVisible(true);
-        this.toast(profileFor(n.biome).respawn);
+        this.toast(n.battle ? '沙蓬重新抽叶' : profileFor(n.biome).respawn);
       }
     });
   }
 
   /* ---------- 采集读条 ---------- */
   startGather(node) {
-    if (!node || !node.active || this.gathering || this.bossActive) return;
+    if (!node || !node.active || this.gathering) return;
+    if (node.battle) { this.pickBattleHerb(node); return; }
+    if (this.bossActive) return;
     this.pointerTarget = null;
     this.playIdle();
     const x = node.x;
@@ -1574,6 +1645,38 @@ export class World extends Phaser.Scene {
     g.t += delta;
     this.gatherFill.width = 38 * Math.min(1, g.t / g.dur);
     if (g.t >= g.dur) this.completeGather();
+  }
+
+  /* 战斗中的沙蓬快采：不进入 gathering，Boss / 小怪继续行动。 */
+  pickBattleHerb(node) {
+    if (!node || !node.active || this.gathering) return;
+    node.active = false;
+    node.respawnAt = this.time.now + BATTLE_HERB_RESPAWN_MS;
+    this.pointerTarget = null;
+    node.sprite.setVisible(false);
+    node.glow.setVisible(false);
+    node.prompt.setVisible(false);
+    const before = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + (node.heal || 2));
+    const healed = this.hp - before;
+    const ring = this.add.ellipse(node.x, node.y - 8, 18, 8, UI.world.herb, 0.22)
+      .setDepth(33).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: ring, scaleX: 2.8, scaleY: 1.8, alpha: 0, duration: 360,
+      onComplete: () => ring.destroy(),
+    });
+    for (let i = 0; i < 5; i += 1) {
+      const a = (i / 5) * Math.PI * 2;
+      const mote = this.add.rectangle(node.x + Math.cos(a) * 5, node.y - 8 + Math.sin(a) * 3, 2, 2,
+        i % 2 ? UI.world.herb : UI.world.herbGold, 0.9).setDepth(34);
+      this.tweens.add({
+        targets: mote, x: mote.x + Math.cos(a) * 14, y: mote.y - 12 + Math.sin(a) * 4,
+        alpha: 0, duration: 420, onComplete: () => mote.destroy(),
+      });
+    }
+    this.updateHp();
+    this.updateHud();
+    this.toast(healed > 0 ? '沙蓬入药 · 回 ' + healed + ' 点生命' : '沙蓬 · 生命已满');
   }
 
   cancelGather(msg) {
@@ -1886,6 +1989,235 @@ export class World extends Phaser.Scene {
     this.updateHud();
   }
 
+  /* ---------- Boss 场小怪 ---------- */
+  clearMobLoot() {
+    for (const item of this.loot || []) {
+      if (item.spr) item.spr.destroy();
+      if (item.glow) item.glow.destroy();
+    }
+    this.loot = [];
+  }
+
+  clearMobs(burst = false) {
+    if (!this.mobs) this.mobs = [];
+    for (const m of this.mobs) {
+      if (!m || !m.spr) continue;
+      if (burst) {
+        const ring = this.add.ellipse(m.x, m.y - 2, 24, 8, UI.world.desert, 0.22)
+          .setDepth(29).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({
+          targets: ring, scaleX: 2.2, scaleY: 1.4, alpha: 0,
+          duration: 280, onComplete: () => ring.destroy(),
+        });
+      }
+      if (m.spr) m.spr.destroy();
+      if (m.shadow) m.shadow.destroy();
+      m.alive = false;
+    }
+    this.mobs = [];
+    this.minionRespawnAt = 0;
+    this.clearMobLoot();
+  }
+
+  spawnBossMinions() {
+    this.clearMobs();
+    const B = this.boss;
+    if (!B) return;
+    const adds = Array.isArray(B.def.minions) ? B.def.minions : [];
+    if (!adds.length) { this.minionMax = 0; return; }
+    this.minionMax = adds.length;
+    this.mobKills = 0;
+    this.minionRespawnAt = 0;
+    adds.forEach((add, i) => this.spawnMinion(add, i, false));
+  }
+
+  spawnMinion(add, slot, respawn = false) {
+    const B = this.boss;
+    if (!B || !add) return;
+    const art = MINION_ART[add.kind] || MINION_ART.sandScarab;
+    const screen = this.screens[B.screenIndex];
+    if (!art || !screen) return;
+    let point = add;
+    // 重生点避开玩家脚边；三处沙口轮流使用。
+    if (respawn && this.player) {
+      for (const p of B.def.minions) {
+        const px = screen.x + p.x;
+        const py = WORLD_Y + p.y;
+        if (Math.hypot(px - this.player.x, py - this.player.y) > 72) { point = p; break; }
+      }
+    }
+    const x = screen.x + point.x;
+    const y = WORLD_Y + point.y;
+    const shadow = this.add.ellipse(x, y - 2, art.shadow[0], art.shadow[1], 0x000000, 0.24)
+      .setDepth(28);
+    const spr = this.add.sprite(x, y, art.idle, 0)
+      .setOrigin(0.5, art.origin).setScale(respawn ? art.scale * 0.7 : art.scale).setDepth(31);
+    if (respawn) {
+      spr.setAlpha(0);
+      const burrow = this.add.ellipse(x, y - 2, 30, 9, UI.world.desert, 0.28)
+        .setDepth(29).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: burrow, scaleX: 1.8, scaleY: 1.2, alpha: 0,
+        duration: 420, onComplete: () => burrow.destroy(),
+      });
+      this.tweens.add({
+        targets: spr, alpha: 1, scaleX: art.scale, scaleY: art.scale,
+        duration: 420, ease: 'Back.easeOut',
+      });
+    } else {
+      const dust = this.add.ellipse(x, y - 3, 34, 10, UI.world.desert, 0.18)
+        .setDepth(29).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: dust, scaleX: 1.6, scaleY: 0.7, alpha: 0, duration: 360, onComplete: () => dust.destroy() });
+    }
+    this.mobs.push({
+      id: B.id + '-add-' + slot + '-' + Math.round(this.time.now),
+      slot, kind: add.kind, def: add,
+      x, y, spr, shadow, hp: add.hp, maxHp: add.hp, dmg: add.dmg,
+      nextAt: this.time.now + (respawn ? 1800 : 2600 + slot * 240),
+      phase: slot * 0.37, alive: true,
+    });
+  }
+
+  updateMinionRespawn(time) {
+    const B = this.boss;
+    if (!B || !this.bossActive || this.dead || this.victory || !this.minionMax) return;
+    if (this.mobs.length >= this.minionMax) { this.minionRespawnAt = 0; return; }
+    const delay = B.def.minionRespawnMs || 9000;
+    if (!this.minionRespawnAt) { this.minionRespawnAt = time + delay; return; }
+    if (time < this.minionRespawnAt) return;
+    const used = new Set(this.mobs.map((m) => m.slot));
+    const slot = B.def.minions.findIndex((_, i) => !used.has(i));
+    if (slot < 0) { this.minionRespawnAt = 0; return; }
+    this.spawnMinion(B.def.minions[slot], slot, true);
+    // 一次清空后先补一只，随后以更短的间隔把缺口补齐；避免 27 秒后才回到 3 只。
+    this.minionRespawnAt = this.mobs.length < this.minionMax ? time + Math.max(1800, Math.floor(delay / 3)) : 0;
+  }
+
+  dropMobLoot(m) {
+    if (!m) return;
+    this.mobKills += 1;
+    const B = this.boss;
+    const chance = B && Number.isFinite(B.def.minionDropChance) ? B.def.minionDropChance : 0.35;
+    if (this.mobKills > 1 && Math.random() >= chance) return;
+    const glow = this.add.circle(m.x, m.y - 10, 10, UI.world.herbGold, 0.22)
+      .setDepth(32).setBlendMode(Phaser.BlendModes.ADD);
+    const spr = this.add.image(m.x, m.y - 10, 'heart').setScale(1.0).setDepth(33);
+    this.tweens.add({ targets: spr, y: spr.y - 3, duration: 620, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: glow, alpha: 0.08, scale: 1.25, duration: 680, yoyo: true, repeat: -1 });
+    this.loot.push({ x: m.x, y: m.y, spr, glow, heal: MOB_HEAL });
+  }
+
+  updateLoot() {
+    if (!this.loot || !this.loot.length || this.dead || this.victory) return;
+    for (const item of [...this.loot]) {
+      if (this.hp >= this.maxHp) continue;
+      if (this.distPlayer(item.x, item.y) > 24) continue;
+      this.loot = this.loot.filter((x) => x !== item);
+      const healed = Math.min(item.heal, this.maxHp - this.hp);
+      this.hp += healed;
+      this.updateHp();
+      this.updateHud();
+      const pop = this.add.text(item.x, item.y - 28, '+' + healed, {
+        fontFamily: UI.font, fontSize: '12px', color: UI.text.gold,
+      }).setDepth(44);
+      this.tweens.add({ targets: pop, y: pop.y - 16, alpha: 0, duration: 420, onComplete: () => pop.destroy() });
+      if (item.spr) item.spr.destroy();
+      if (item.glow) item.glow.destroy();
+      this.toast('拾取 心火 · 回 ' + healed + ' 点生命');
+    }
+  }
+
+  mobDirection(m) {
+    const dx = this.player.x - m.x;
+    const dy = this.player.y - m.y;
+    if (Math.abs(dx) > Math.abs(dy) * 0.9) return dx < 0 ? 1 : 3;
+    return dy < 0 ? 2 : 0;
+  }
+
+  updateMobs(time, delta) {
+    if (!this.bossActive || !this.boss || this.dead || this.victory) return;
+    this.updateMinionRespawn(time);
+    if (!this.mobs.length) return;
+    const arena = this.boss.arena;
+    for (const m of this.mobs) {
+      if (!m || !m.alive || !m.spr) continue;
+      const dx = this.player.x - m.x;
+      const dy = this.player.y - m.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const dir = this.mobDirection(m);
+      if (d > 30 && d < 245) {
+        const step = 44 * (delta / 1000);
+        m.x = clamp(m.x + (dx / d) * step, arena.x1, arena.x2);
+        m.y = clamp(m.y + (dy / d) * step, arena.y1, arena.y2);
+      }
+      m.spr.setPosition(m.x, m.y);
+      m.shadow.setPosition(m.x, m.y - 2);
+      const art = MINION_ART[m.kind] || MINION_ART.sandScarab;
+      const moving = d > 30 && d < 245;
+      const frame = moving && (Math.floor(time / 190) + Math.floor(m.phase * 2)) % 2
+        ? art.skitter : art.idle;
+      if (m.spr.texture.key !== frame || Number(m.spr.frame.name) !== dir) {
+        m.spr.setTexture(frame, dir);
+      }
+      if (d <= 28 && time >= m.nextAt) {
+        m.nextAt = time + 1120;
+        this.hurtPlayer(m.x, m.y, m.dmg);
+        m.spr.setTintFill(0xffffff);
+        this.time.delayedCall(70, () => {
+          if (m.alive && m.spr) m.spr.clearTint();
+        });
+      }
+      if (this.dead) break;
+    }
+  }
+
+  nearestMob(range) {
+    let best = null;
+    let bestD = range + 1;
+    for (const m of this.mobs) {
+      if (!m || !m.alive) continue;
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y - 8, m.x, m.y - 10);
+      if (d < bestD) { bestD = d; best = m; }
+    }
+    return best;
+  }
+
+  damageMob(m, dmg) {
+    if (!m || !m.alive) return;
+    m.hp = Math.max(0, m.hp - dmg);
+    m.spr.setTintFill(0xffffff);
+    this.cameras.main.shake(50, 0.004);
+    const float = this.add.text(m.x + 4, m.y - 30, '-' + dmg, {
+      fontFamily: UI.font, fontSize: '12px', color: UI.text.danger,
+    }).setDepth(44);
+    this.tweens.add({ targets: float, y: float.y - 18, alpha: 0, duration: 480, onComplete: () => float.destroy() });
+    if (m.hp > 0) {
+      this.time.delayedCall(70, () => { if (m.alive && m.spr) m.spr.clearTint(); });
+      return;
+    }
+    m.alive = false;
+    this.dropMobLoot(m);
+    const alive = this.mobs.filter((x) => x.alive && x !== m).length;
+    if (this.bossActive && alive < this.minionMax) {
+      const delay = (this.boss.def.minionRespawnMs || 9000);
+      if (!this.minionRespawnAt) this.minionRespawnAt = this.time.now + delay;
+    }
+    const dust = this.add.ellipse(m.x, m.y - 2, 30, 9, UI.world.herbGold, 0.3)
+      .setDepth(30).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: dust, scaleX: 2.4, scaleY: 1.3, alpha: 0,
+      duration: 340, onComplete: () => dust.destroy(),
+    });
+    this.tweens.add({
+      targets: [m.spr, m.shadow], alpha: 0, scaleX: 0.7, scaleY: 0.7,
+      duration: 180, onComplete: () => {
+        if (m.spr) m.spr.destroy();
+        if (m.shadow) m.shadow.destroy();
+      },
+    });
+    this.mobs = this.mobs.filter((x) => x !== m);
+  }
+
   /* ---------- Boss ---------- */
   spawnBoss(def) {
     const b = def || (this.bossSpawn && this.bossSpawn.def);
@@ -1897,6 +2229,7 @@ export class World extends Phaser.Scene {
       if (this.boss.breath) this.boss.breath.remove();
       this.boss = null;
     }
+    this.clearMobs();
     const spawn = this.bossSpawnFor(b);
     if (!spawn) return;
     this.bossSpawn = spawn;
@@ -1909,6 +2242,7 @@ export class World extends Phaser.Scene {
     const ring = this.add.ellipse(x, y - 3, Math.round(art.shadow[0] * 0.86), Math.round(art.shadow[1] * 1.1), art.tint, 0.13).setDepth(32).setVisible(false);
     const spr = this.add.sprite(x, y, art.tex.idle, 0)
       .setOrigin(0.5, art.origin.idle).setScale(art.scale).setDepth(35).setVisible(false);
+    if (art.bodyTint) spr.setTint(art.bodyTint);
     // 沙海蜃专属蜃气：身后一层沙金色低透明重影，随呼吸轻微漂移。
     const mirror = art.mirage
       ? this.add.sprite(x, y, art.tex.idle, 0).setOrigin(0.5, art.origin.idle)
@@ -1998,6 +2332,51 @@ export class World extends Phaser.Scene {
     });
   }
 
+  /* desert-6 右边是雪原；Boss 战把邻屏暂时藏起来，补一段同群系沙海，
+     让镜头里的边界仍是沙漠，而不是雪松。打完立刻恢复。 */
+  buildBossEdge(screen) {
+    this.restoreBossEdge();
+    if (!screen) return;
+    const idx = this.screens.indexOf(screen);
+    const next = this.screens[idx + 1];
+    if (!next || next.biome === screen.biome) return;
+    const right = screen.x + SCREEN_W;
+    this.bossHidden = [];
+    this.children.list.forEach((o) => {
+      if (!o || !o.visible || !o.setVisible) return;
+      if (!Number.isFinite(o.x) || o.x < right + 1 || o.x > right + SCREEN_W) return;
+      if (o.depth >= 60 || (o.scrollFactorX === 0 && o.scrollFactorY === 0)) return;
+      o.setVisible(false);
+      this.bossHidden.push(o);
+    });
+    const sand = this.add.tileSprite(right, WORLD_Y, SCREEN_W, SCREEN_H, 'desertTile', 0)
+      .setOrigin(0).setDepth(0.2).setTint(TINT.desert || 0xffffff);
+    this.bossEdge.push(sand);
+    // 邻屏补景：沙脊用椭圆（和 desert-6 本屏的沙丘同一画法），再放一块风蚀岩和沙蓬。
+    const farDune = this.add.ellipse(right + 132, WORLD_Y + SCREEN_H - 14, 78 * 1.7, 22 * 1.35, 0xb8975e, 0.4)
+      .setDepth(17);
+    const nearDune = this.add.ellipse(right + 28, WORLD_Y + SCREEN_H - 8, 78 * 1.1, 22 * 0.95, 0xc6a269, 0.32)
+      .setDepth(18);
+    const rock = this.add.image(right + 150, WORLD_Y + SCREEN_H - 10, 'desertRock')
+      .setOrigin(0.5, 1).setScale(1.9).setDepth(18).setTint(0xb79a6b);
+    const shrub = this.add.image(right + 78, WORLD_Y + SCREEN_H - 16, 'desertShrub')
+      .setOrigin(0.5, 1).setScale(1.25).setDepth(18).setTint(0xa98e61);
+    const dead = this.add.image(right + 22, WORLD_Y + SCREEN_H - 18, 'desertDeadTree')
+      .setOrigin(0.5, 1).setScale(1.15).setDepth(18).setTint(0xb59a6c);
+    this.bossEdge.push(farDune, nearDune, rock, shrub, dead);
+    // 一层极淡的风沙，把补景和真沙漠揉在一起。
+    const haze = this.add.rectangle(right, WORLD_Y, SCREEN_W, SCREEN_H, 0xd9b77c, 0.12)
+      .setOrigin(0).setDepth(19);
+    this.bossEdge.push(haze);
+  }
+
+  restoreBossEdge() {
+    for (const o of this.bossHidden || []) { if (o && o.setVisible) o.setVisible(true); }
+    this.bossHidden = [];
+    for (const o of this.bossEdge || []) { if (o && o.destroy) o.destroy(); }
+    this.bossEdge = [];
+  }
+
   startBossFight() {
     if (!this.boss) return;
     // 避开上一屏跨过来的树冠：把入场站位放到巢心左下空地。
@@ -2028,10 +2407,10 @@ export class World extends Phaser.Scene {
     this.boss.ring.setVisible(true);
     this.boss.label.setVisible(false);
     this.setBossPose('roar', 0);
+    this.spawnBossMinions();
+    // 不做“八角笼”式红边：Boss 场的边界交给沙尘幕、沙丘和镜头外自然收束。
     if (this.arenaLine) { this.arenaLine.destroy(); this.arenaLine = null; }
-    const arenaScreen = this.screens[this.boss.screenIndex];
-    this.arenaLine = this.add.rectangle(arenaScreen.x + 6, WORLD_Y + 6, 5, SCREEN_H - 12, UI.world.boss, 0.45)
-      .setOrigin(0).setDepth(38);
+    this.buildBossEdge(this.bossSpawn.screen);
     this.updateHud();
     this.updateBossBar();
     this.banner((this.boss.name || '世界 Boss') + ' · ' + (this.boss.def.title || '星火守巢者'));
@@ -2071,7 +2450,9 @@ export class World extends Phaser.Scene {
     }
     if (B.flash > 0) {
       B.flash -= delta;
-      if (B.flash <= 0) B.spr.clearTint();
+      if (B.flash <= 0) {
+        if (B.art.bodyTint) B.spr.setTint(B.art.bodyTint); else B.spr.clearTint();
+      }
     }
     const dist = this.distBoss();
     if (B.state === 'intro') {
@@ -2167,9 +2548,10 @@ export class World extends Phaser.Scene {
     B.turnDir = B.dir;
     B.turnAt = this.time.now + BOSS_TURN_MS;
     if (B.warning) B.warning.destroy();
-    B.warning = this.add.circle(B.spr.x, B.spr.y - 22, B.art.swipeWarn, UI.world.boss, 0.26)
-      .setDepth(37);
-    this.tweens.add({ targets: B.warning, alpha: 0.08, scale: 1.15, duration: 160, yoyo: true });
+    // 只画外圈描边：环在 Boss 身体之上，但不填色，避免把沙海蜃本体洗成红色。
+    B.warning = this.add.circle(B.spr.x, B.spr.y - 22, B.art.swipeWarn, 0x000000, 0)
+      .setDepth(38).setStrokeStyle(3, 0xff7a6a, 0.9);
+    this.tweens.add({ targets: B.warning, scale: 1.03, duration: 160, yoyo: true });
   }
 
   startPounce() {
@@ -2187,9 +2569,9 @@ export class World extends Phaser.Scene {
     B.turnDir = B.dir;
     B.turnAt = this.time.now + BOSS_TURN_MS;
     if (B.warning) B.warning.destroy();
-    B.warning = this.add.circle(B.target.x, B.target.y - 10, 32, UI.world.boss, 0.3)
-      .setDepth(37);
-    this.tweens.add({ targets: B.warning, alpha: 0.1, scale: 1.2, duration: 210, yoyo: true });
+    B.warning = this.add.circle(B.target.x, B.target.y - 10, 32, 0x000000, 0)
+      .setDepth(38).setStrokeStyle(3, 0xff7a6a, 0.9);
+    this.tweens.add({ targets: B.warning, scale: 1.08, duration: 210, yoyo: true });
   }
 
   attack() {
@@ -2203,8 +2585,11 @@ export class World extends Phaser.Scene {
     this.tweens.add({ targets: fx, scale: 2.2, duration: 180, onComplete: () => fx.destroy() });
     this.tweens.add({ targets: this.player, scaleX: 2.25, scaleY: 1.8, duration: 70, yoyo: true });
     try { this.sound.play('sword', { rate: Phaser.Math.FloatBetween(0.95, 1.08), volume: 0.5 }); } catch (e) {}
-    if (!this.bossActive || !this.boss) return;
-    if (this.distBoss() <= ATTACK_RANGE) this.damageBoss(ATTACK_DMG);
+    if (!this.bossActive) return;
+    // 小怪优先；如果 Boss 也在同一刀范围内，一并吃伤害。
+    const mob = this.nearestMob(ATTACK_RANGE);
+    if (mob) this.damageMob(mob, ATTACK_DMG);
+    if (this.boss && this.distBoss() <= ATTACK_RANGE) this.damageBoss(ATTACK_DMG);
   }
 
   damageBoss(dmg) {
@@ -2250,6 +2635,7 @@ export class World extends Phaser.Scene {
     this.bossDead = true;
     this.bossActive = false;
     this.boss.state = 'dead';
+    this.clearMobs(true);
     if (this.boss.warning) { this.boss.warning.destroy(); this.boss.warning = null; }
     if (this.boss.breath) { this.boss.breath.remove(); this.boss.breath = null; }
     this.setBossPose('roar', 0);
@@ -2264,6 +2650,7 @@ export class World extends Phaser.Scene {
     this.boss.ring.setVisible(false);
     this.boss.label.setVisible(false);
     if (this.arenaLine) { this.arenaLine.destroy(); this.arenaLine = null; }
+    // 沙海补景留到胜利面板关闭后再撤，胜利页背景仍是完整的沙漠。
     this.updateBossBar();
     const reward = this.boss.rewardTokens;
     this.save = patchWorldSave({ bosses: { ...this.save.bosses, [this.boss.id]: 'done' }, tokens: this.save.tokens + reward });
@@ -2307,6 +2694,7 @@ export class World extends Phaser.Scene {
     if (this.dead) return;
     this.dead = true;
     this.bossActive = false;
+    this.clearMobs(true);
     this.pointerTarget = null;
     // 死亡面板要独占视线：清掉入场 banner / toast，避免压住“星火熄灭”。
     if (this.bannerT) { this.bannerT.destroy(); this.bannerT = null; }
@@ -2359,12 +2747,15 @@ export class World extends Phaser.Scene {
     this.lastHurtAt = -9999;
     this.player.setAlpha(1);
     this.player.setPosition(this.bossSpawn.screen.x + 150, WORLD_Y + 240);
+    this.clearMobs(true);
+    this.spawnBossMinions();
     this.boss.hp = this.boss.maxHp;
     this.boss.spr.setPosition(this.bossSpawn.x, this.bossSpawn.y);
     this.boss.state = 'intro';
     this.boss.stateEnd = this.time.now + 650;
     this.boss.nextAt = this.time.now + 650;
     this.bossActive = true;
+    this.buildBossEdge(this.bossSpawn.screen);
     if (this.boss.breath) { this.boss.breath.remove(); this.boss.breath = null; }
     this.boss.spr.setVisible(true).setAlpha(1).setScale(this.boss.scale);
     if (this.boss.mirror) this.boss.mirror.setVisible(true).setAlpha(0.1);
@@ -2423,6 +2814,7 @@ export class World extends Phaser.Scene {
 
   closeVictory() {
     if (!this.victory) return;
+    this.restoreBossEdge();
     this.destroyModal();
     this.victory = false;
     this.panelOpen = false;

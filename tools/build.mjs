@@ -187,6 +187,9 @@ const img = {
   sandMirageIdle: join(ROOT, 'assets/01-primary/world/sand-mirage-idle.png'),
   sandMirageCharge: join(ROOT, 'assets/01-primary/world/sand-mirage-charge.png'),
   sandMirageRoar: join(ROOT, 'assets/01-primary/world/sand-mirage-roar.png'),
+  sandScarabIdle: join(ROOT, 'assets/01-primary/world/sand-scarab-idle.png'),
+  sandScarabSkitter: join(ROOT, 'assets/01-primary/world/sand-scarab-skitter.png'),
+  desertRock: join(ROOT, 'assets/01-primary/world/sand-rock.png'),
   /* 批 13 小屋：ink-studio 3D 像素离线件，见 docs/ART_PIPELINE.md */
   faceGuide: join(ROOT, 'assets/01-primary/hub/npc-guide.png'),
   faceSmith: join(ROOT, 'assets/01-primary/hub/npc-smith.png'),
@@ -241,6 +244,7 @@ const FRAME = {
   mossBeastIdle: [96, 96], mossBeastCharge: [96, 96], mossBeastRoar: [96, 96],
   bambooMirageIdle: [96, 96], bambooMirageCharge: [96, 96], bambooMirageRoar: [96, 96],
   sandMirageIdle: [96, 96], sandMirageCharge: [96, 96], sandMirageRoar: [96, 96],
+  sandScarabIdle: [64, 64], sandScarabSkitter: [64, 64], desertRock: [64, 64],
   faceGuide: [64, 64], faceSmith: [64, 64], faceMerchant: [64, 64],
   forgeAnvil: [64, 64], trainDummy: [64, 64],
 };

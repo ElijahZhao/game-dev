@@ -1797,10 +1797,123 @@
           244,
           4,
           1
+        ],
+        [
+          58,
+          62,
+          5,
+          0.95
+        ],
+        [
+          352,
+          238,
+          4,
+          1.05
+        ],
+        [
+          136,
+          64,
+          6,
+          0.85
+        ],
+        [
+          270,
+          258,
+          5,
+          0.9
         ]
       ],
-      "props": [],
-      "herbs": [],
+      "props": [
+        [
+          "desertDune",
+          40,
+          86,
+          1.0
+        ],
+        [
+          "desertDune",
+          430,
+          158,
+          0.9
+        ],
+        [
+          "desertArch",
+          56,
+          92,
+          1.0
+        ],
+        [
+          "desertDeadTree",
+          64,
+          178,
+          1.05
+        ],
+        [
+          "desertRock",
+          248,
+          88,
+          1.02
+        ],
+        [
+          "desertPalm",
+          438,
+          206,
+          1.0
+        ],
+        [
+          "desertRock",
+          434,
+          244,
+          1.08
+        ],
+        [
+          "desertScrub",
+          108,
+          218,
+          1.0
+        ],
+        [
+          "desertScrub",
+          194,
+          104,
+          1.0
+        ],
+        [
+          "desertScrub",
+          360,
+          112,
+          1.0
+        ],
+        [
+          "desertScrub",
+          400,
+          230,
+          1.0
+        ],
+        [
+          "desertScrub",
+          118,
+          138,
+          0.9
+        ]
+      ],
+      "herbs": [
+        [
+          132,
+          246,
+          1
+        ],
+        [
+          40,
+          120,
+          1
+        ],
+        [
+          440,
+          280,
+          1
+        ]
+      ],
       "npc": null
     },
     {
@@ -3474,7 +3587,33 @@
       "title": "蜃楼守沙者",
       "victoryTitle": "沙海的星火 · 已归位",
       "victoryBody": "无旗的沙海，终于散去了蜃楼。",
-      "memorialText": "沙海星火 · 已归位"
+      "memorialText": "沙海星火 · 已归位",
+      "minions": [
+        {
+          "kind": "sandScarab",
+          "x": 84,
+          "y": 214,
+          "hp": 6,
+          "dmg": 2
+        },
+        {
+          "kind": "sandScarab",
+          "x": 350,
+          "y": 212,
+          "hp": 6,
+          "dmg": 2
+        },
+        {
+          "kind": "sandScarab",
+          "x": 210,
+          "y": 92,
+          "hp": 7,
+          "dmg": 2
+        }
+      ]
+    ,
+      "minionRespawnMs": 9000,
+      "minionDropChance": 0.45
     }
   ]
 }
